@@ -1186,7 +1186,10 @@ function writeToSheets(type, row) {
   try {
     var params = '?type=' + encodeURIComponent(type);
     Object.keys(row).forEach(function(k) {
-      params += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(String(row[k] || ''));
+      var val = String(row[k] || '');
+      // phone 欄位前加單引號，防止 Sheets 當數字（避免開頭 0 被吃掉）
+      if(k === 'phone' && val && val !== '—') val = "'" + val;
+      params += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(val);
     });
     // 用 GET no-cors 繞過 CORS 限制（已驗證可寫入）
     fetch(GS_API + params, { method: 'GET', mode: 'no-cors' }).catch(function() {});
@@ -1778,9 +1781,14 @@ function exportExcel(type){
 
       if(!rows.length){ toast('目前無資料可匯出','er'); return; }
 
-      // 手機欄保護
+      // 手機欄保護（清除 Sheets 前置單引號，再加 Excel ="..." 保護）
       rows = rows.map(function(r){
-        if(r[4] && r[4]!=='—' && r[4].indexOf('="')===-1) r[4]='="'+r[4]+'"';
+        if(r[4] && r[4]!=='—'){
+          // 移除 Sheets 前置單引號
+          if(r[4].charAt(0) === "'") r[4] = r[4].slice(1);
+          // 加 Excel 文字強制格式
+          if(r[4].indexOf('="') === -1) r[4] = '="' + r[4] + '"';
+        }
         return r;
       });
 

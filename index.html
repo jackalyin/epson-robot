@@ -1781,13 +1781,23 @@ function exportExcel(type){
 
       if(!rows.length){ toast('目前無資料可匯出','er'); return; }
 
-      // 手機欄保護（清除 Sheets 前置單引號，再加 Excel ="..." 保護）
+      // 手機欄保護：補回被 Sheets 吃掉的開頭 0，並加 Excel ="..." 強制文字格式
       rows = rows.map(function(r){
         if(r[4] && r[4]!=='—'){
-          // 移除 Sheets 前置單引號
+          // 移除 Sheets 前置單引號（如有）
           if(r[4].charAt(0) === "'") r[4] = r[4].slice(1);
+          // 移除已有的 ="..." 包裝，取出純號碼
+          var ph = r[4];
+          if(ph.indexOf('="')===0 && ph.slice(-1)==='"') ph = ph.slice(2,-1);
+          // 補回開頭 0：台灣手機 09 開頭共 10 碼；如果是 9 碼且以 9 開頭就補 0
+          ph = ph.replace(/-/g,'');  // 去除橫線方便判斷
+          if(/^9\d{8}$/.test(ph)) ph = '0' + ph;
+          // 重新加回橫線格式 09xx-xxx-xxx
+          if(/^09\d{8}$/.test(ph)){
+            ph = ph.slice(0,4)+'-'+ph.slice(4,7)+'-'+ph.slice(7);
+          }
           // 加 Excel 文字強制格式
-          if(r[4].indexOf('="') === -1) r[4] = '="' + r[4] + '"';
+          r[4] = '="' + ph + '"';
         }
         return r;
       });
@@ -1818,18 +1828,24 @@ function exportExcel(type){
       toast('無法連線 Sheets，改用本機資料','er');
       var rows2, headers2;
       var now2 = new Date().toLocaleDateString('zh-TW').replace(/\//g,'-');
+      // 補零 helper
+      function fixPhone(ph){
+        if(!ph || ph==='—') return ph||'—';
+        ph = ph.replace(/-/g,'');
+        if(/^9\d{8}$/.test(ph)) ph = '0'+ph;
+        if(/^09\d{8}$/.test(ph)) ph = ph.slice(0,4)+'-'+ph.slice(4,7)+'-'+ph.slice(7);
+        return '="'+ph+'"';
+      }
       if(type==='interests'){
         headers2=['時間','姓名','公司','地區','手機','Email','感興趣案例'];
         rows2=getInterests().map(function(r){
-          var p=(r.phone&&r.phone!=='—')?'="'+r.phone+'"':'—';
-          return [r.time,r.name,r.company,r.region||'—',p,r.email||'—',r.case];
+          return [r.time,r.name,r.company,r.region||'—',fixPhone(r.phone),r.email||'—',r.case];
         });
       } else {
         headers2=['時間','姓名','公司','地區','手機','動作','下載資料'];
         rows2=getLogs().map(function(l){
           var act=l.action==='download'?'⬇ 下載':l.action==='case_interest'?'💡 案例詢問':l.action==='view'?'👁 瀏覽':'📄 頁面切換';
-          var p=(l.phone&&l.phone!=='—')?'="'+l.phone+'"':'—';
-          return [l.time,l.name||'—',l.company||'—',l.region||'—',p,act,l.action==='download'?(l.target||'—'):'—'];
+          return [l.time,l.name||'—',l.company||'—',l.region||'—',fixPhone(l.phone),act,l.action==='download'?(l.target||'—'):'—'];
         });
       }
       if(!rows2.length){ toast('本機也無資料可匯出','er'); return; }

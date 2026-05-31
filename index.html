@@ -543,7 +543,12 @@ if('serviceWorker' in navigator){
           <div style="flex:1;height:1px;background:#DDE3EE"></div>
           <button onclick="renderDashboard()" style="padding:6px 14px;border-radius:8px;border:1.5px solid #DDE3EE;background:#fff;font-size:12px;font-weight:600;color:#4A5578;cursor:pointer;font-family:inherit">🔄 重新整理</button>
         </div>
-        <div id="dashBoard">
+        <div style="background:linear-gradient(135deg,rgba(0,168,232,.12),rgba(0,48,135,.08));border:1px solid rgba(0,168,232,.2);border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:12px;color:#003087;line-height:1.6;display:flex;align-items:flex-start;gap:8px">
+  <span style="font-size:16px;flex-shrink:0">ℹ️</span>
+  <div>後台資料直接從 <strong>Google Sheets</strong> 讀取，顯示<strong>所有裝置</strong>（手機／電腦／不同瀏覽器）的使用紀錄。<br>
+  點選「🔄 重新整理」可取得最新資料。本機 localStorage 作為離線備份並自動合併。</div>
+</div>
+<div id="dashBoard">
           <div style="text-align:center;padding:40px;color:#8B96B0;font-size:14px">載入中…</div>
         </div>
       </div>
@@ -713,13 +718,15 @@ function go(id){
 }
 
 function render(id){
-  if(id==='catalog')       renderCatalog();
-  else if(id==='ce')       renderCE();
-  else if(id==='models')   renderRes('models','g-models','all');
-  else if(id==='trouble')  renderRes('trouble','g-trouble','all');
-  else if(id==='showcase') loadShowcaseFromSheets();
-  else if(id==='contact')  renderContacts();
-  else if(id==='admin')    renderAdmin();
+  if(id==='catalog') renderCatalog();
+  if(id==='ce')      renderCE();
+  else if(id==='models') renderRes('models','g-models','all');
+  else if(id==='trouble') renderRes('trouble','g-trouble','all');
+  else if(id==='showcase'){
+    loadShowcaseFromSheets();
+  }
+  else if(id==='contact') renderContacts();
+  else if(id==='admin') renderAdmin();
 }
 
 // ══════════════════════════════════════════
@@ -1168,6 +1175,24 @@ function toast(msg,type){
 // ══════════════════════════════════════════
 
 // ── 儲存層（localStorage 持久化）──
+// ══════════════════════════════════════════════════════
+// 跨裝置同步核心：Google Sheets 寫入
+// 修正：localStorage 只存在各自裝置，後台看不到其他人資料
+// 解法：每次行為同時 GET 寫入 Apps Script，後台從 Sheets 讀取
+// ══════════════════════════════════════════════════════
+var GS_API = 'https://script.google.com/macros/s/AKfycbzlwsEMcv8sJlzR2LzXr6rWGDCwnIwkNESkLSrjXSwikQM__RgEbl1l_Rac1C_MhlRs/exec';
+
+function writeToSheets(type, row) {
+  try {
+    var params = '?type=' + encodeURIComponent(type);
+    Object.keys(row).forEach(function(k) {
+      params += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(String(row[k] || ''));
+    });
+    // 用 GET no-cors 繞過 CORS 限制（已驗證可寫入）
+    fetch(GS_API + params, { method: 'GET', mode: 'no-cors' }).catch(function() {});
+  } catch(e) {}
+}
+
 function saveLog(entry){
   var logs=getLogs();
   logs.unshift(entry);
@@ -1189,11 +1214,14 @@ var CUR_USER = getUser(); // {name, company, time}
 
 function checkUser(cb){
   if(CUR_USER){
-    // 已有姓名就直接執行，不強制補充手機/Email
-    if(cb) cb();
+    // 已登記但缺手機或Email → 跳補充視窗
+    if(!CUR_USER.phone && !CUR_USER.email){
+      openUserModal(cb, 'supplement');
+    } else {
+      if(cb) cb();
+    }
     return;
   }
-  // 完全未登記才跳登記視窗
   openUserModal(cb, 'first');
 }
 
@@ -1374,7 +1402,7 @@ function onCaseClick(caseId, caseTitle){
   checkUser(function(){
     logAction('case_interest', caseTitle, 'id:'+caseId);
     // 記錄到儀表板「案例興趣」
-    saveInterest({
+    var _int = {
       time:    new Date().toLocaleString('zh-TW'),
       name:    CUR_USER.name,
       company: CUR_USER.company,
@@ -1382,43 +1410,18 @@ function onCaseClick(caseId, caseTitle){
       phone:   CUR_USER.phone||'—',
       email:   CUR_USER.email||'—',
       case:    caseTitle
-    });
+    };
+    saveInterest(_int);
+    // ── 跨裝置同步：案例詢問寫入 Google Sheets ──
+    writeToSheets('interest', _int);
   });
 }
 
-// ── Google Sheets API 寫入（非同步，不影響使用者操作）──
-var GS_API = 'https://script.google.com/macros/s/AKfycbzlwsEMcv8sJlzR2LzXr6rWGDCwnIwkNESkLSrjXSwikQM__RgEbl1l_Rac1C_MhlRs/exec';
-
-function writeToSheets(type, row){
-  // 延遲 100ms 執行，確保不影響主要操作
-  setTimeout(function(){
-    try{
-      var params = '?type='+encodeURIComponent(type);
-      Object.keys(row).forEach(function(k){
-        params += '&'+encodeURIComponent(k)+'='+encodeURIComponent(String(row[k]||''));
-      });
-      var img = new Image();
-      img.src = GS_API + params;
-    }catch(e){}
-  }, 100);
-}
-
 function saveInterest(entry){
-  // 本機備份
   var list = getInterests();
   list.unshift(entry);
   if(list.length>200) list=list.slice(0,200);
   try{ localStorage.setItem('epson_interests', JSON.stringify(list)); }catch(e){}
-  // 寫入 Google Sheets
-  writeToSheets('interest', {
-    time:    entry.time,
-    name:    entry.name,
-    company: entry.company,
-    region:  entry.region||'—',
-    phone:   entry.phone||'—',
-    email:   entry.email||'—',
-    'case':  entry.case
-  });
 }
 function getInterests(){
   try{ return JSON.parse(localStorage.getItem('epson_interests')||'[]'); }catch(e){ return []; }
@@ -1434,25 +1437,22 @@ function logAction(action, target, extra){
       company: CUR_USER.company,
       phone:   CUR_USER.phone||'—',
       region:  CUR_USER.region||'—',
-      email:   CUR_USER.email||'—',
       action:  action,
       target:  target,
       extra:   extra||''
     };
     saveLog(entry);
-    // 寫入 Google Sheets（下載 & 案例興趣才記錄，避免過多流量）
-    if(action==='download' || action==='case_interest'){
-      writeToSheets('log', {
-        time:    entry.time,
-        name:    entry.name,
-        company: entry.company,
-        region:  entry.region,
-        phone:   entry.phone,
-        email:   entry.email,
-        action:  action==='download'?'⬇ 下載':'💡 案例詢問',
-        target:  entry.target
-      });
-    }
+    // ── 跨裝置同步：寫入 Google Sheets ──
+    writeToSheets('log', {
+      time:    entry.time,
+      name:    entry.name,
+      company: entry.company,
+      region:  entry.region,
+      phone:   entry.phone,
+      email:   CUR_USER.email||'—',
+      action:  entry.action,
+      target:  entry.target
+    });
     if(action==='download') sendEmailNotify(entry);
   });
 }
@@ -1474,219 +1474,90 @@ function sendEmailNotify(entry){
   }).catch(function(){});
 }
 
-// ── doDL 追蹤由後面統一處理 ──
+// ── 覆寫 doDL & doView 加入追蹤 ──
+var _origDL   = doDL;
+var _origView = window.doView || function(){};
+
+doDL = function(id){
+  var all=[];Object.keys(D).forEach(function(k){D[k].forEach(function(i){all.push(i);});});
+  var item=all.find(function(i){return i.id===id;});
+  if(item) logAction('download', item.title, '');
+  _origDL(id);
+};
+
+// ── 覆寫 go() 加入頁面瀏覽追蹤（非必填身份，靜默記錄）──
 var _origGo2 = null; // 會在後台驗證系統覆寫時串接
 
 // ── 儀表板渲染 ──
 function renderDashboard(){
   var el = document.getElementById('dashBoard');
   if(!el) return;
-  el.innerHTML = '<div style="text-align:center;padding:40px;color:#8B96B0;font-size:14px"><div style="width:28px;height:28px;border:3px solid #DDE3EE;border-top-color:#003087;border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 12px"></div>從 Google Sheets 載入資料中…</div>';
 
-  var SHEET_ID = '1MK6zumlf6Gc6gFA5SPLxbaUWo_7U8yY4AusqqYZVEPA';
+  // ── 跨裝置修正：先顯示 loading，再從 Sheets 讀取所有裝置資料 ──
+  el.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:12px;padding:60px 20px;color:#8B96B0;font-size:14px">' +
+    '<div style="width:20px;height:20px;border:3px solid #DDE3EE;border-top-color:#003087;border-radius:50%;animation:spin .8s linear infinite"></div>' +
+    '從 Google Sheets 載入所有裝置記錄中…</div>';
 
-  // 同時讀取 logs 和 interests 兩個工作表
+  var SHEETS_ID = '1MK6zumlf6Gc6gFA5SPLxbaUWo_7U8yY4AusqqYZVEPA';
+  var logsUrl   = 'https://docs.google.com/spreadsheets/d/' + SHEETS_ID + '/gviz/tq?tqx=out:csv&sheet=logs&t=' + Date.now();
+  var intUrl    = 'https://docs.google.com/spreadsheets/d/' + SHEETS_ID + '/gviz/tq?tqx=out:csv&sheet=interests&t=' + Date.now();
+
   Promise.all([
-    fetch('https://docs.google.com/spreadsheets/d/'+SHEET_ID+'/export?format=csv&gid='+getGidByName('logs')).then(function(r){ return r.text(); }).catch(function(){ return ''; }),
-    fetch('https://docs.google.com/spreadsheets/d/'+SHEET_ID+'/export?format=csv&gid='+getGidByName('interests')).then(function(r){ return r.text(); }).catch(function(){ return ''; })
-  ]).then(function(results){
-    var logs      = parseSheetCSV(results[0]);
-    var interests = parseSheetCSV(results[1]);
-    renderDashboardData(logs, interests);
-  }).catch(function(){
-    // Fallback 用 localStorage
-    renderDashboardData(getLogs(), getInterests());
+    fetch(logsUrl).then(function(r){ return r.text(); }).catch(function(){ return null; }),
+    fetch(intUrl).then(function(r){ return r.text(); }).catch(function(){ return null; })
+  ]).then(function(results) {
+    var sheetsLogs = parseSheetCSV(results[0]);
+    var sheetsInts = parseSheetCSV(results[1]);
+
+    // 合併 localStorage 備份（離線記錄補進去）
+    var localLogs = getLogs();
+    var localInts = getInterests();
+    var lk = {};
+    sheetsLogs.forEach(function(l){ lk[(l.time||'')+'|'+(l.name||'')] = 1; });
+    localLogs.forEach(function(l){ if (!lk[(l.time||'')+'|'+(l.name||'')]) { sheetsLogs.push(l); } });
+    var ik = {};
+    sheetsInts.forEach(function(l){ ik[(l.time||'')+'|'+(l.name||'')] = 1; });
+    localInts.forEach(function(l){ if (!ik[(l.time||'')+'|'+(l.name||'')]) { sheetsInts.push(l); } });
+
+    // 排序最新在前
+    sheetsLogs.sort(function(a,b){ return String(b.time||'').localeCompare(String(a.time||'')); });
+    sheetsInts.sort(function(a,b){ return String(b.time||'').localeCompare(String(a.time||'')); });
+
+    renderDashboardContent(sheetsLogs, sheetsInts, el);
   });
 }
 
-// 取得工作表 gid（hardcode，logs=第2個，interests=第3個）
-function getGidByName(name){
-  if(name==='logs')      return '1009010010';
-  if(name==='interests') return '655395799';
-  return '0';
-}
-
-function parseSheetCSV(csv){
-  if(!csv || !csv.trim()) return [];
-  var rows = splitCaseCSVRows(csv);
-  if(rows.length < 2) return [];
-  var headers = rows[0];
-  var result = [];
-  for(var i=1; i<rows.length; i++){
-    if(!rows[i][0] || !rows[i][0].trim()) continue;
-    var obj = {};
-    headers.forEach(function(h,j){ obj[h.trim()] = (rows[i][j]||'').trim(); });
-    result.push(obj);
+function parseSheetCSV(text) {
+  if (!text) { return []; }
+  var rows = [], lines = text.split('\n');
+  var headers = [];
+  for (var i = 0; i < lines.length; i++) {
+    var cols = [], cur = '', inQ = false, line = lines[i];
+    for (var c = 0; c < line.length; c++) {
+      var ch = line[c];
+      if (ch === '"') { inQ = !inQ; }
+      else if (ch === ',' && !inQ) { cols.push(cur.trim()); cur = ''; }
+      else { cur += ch; }
+    }
+    cols.push(cur.trim());
+    if (i === 0) { headers = cols; }
+    else {
+      if (!cols[0] && !cols[1]) { continue; }
+      var obj = {};
+      headers.forEach(function(h, idx){ obj[h] = cols[idx] || ''; });
+      rows.push(obj);
+    }
   }
-  return result;
+  return rows;
 }
 
-function renderDashboardData(logs, interests){
-  var el = document.getElementById('dashBoard');
-  if(!el) return;
-
-  var dlCount   = logs.filter(function(l){ return l.action&&l.action.indexOf('下載')>-1; }).length;
-  var caseCount = logs.filter(function(l){ return l.action&&l.action.indexOf('案例')>-1; }).length;
+function renderDashboardContent(logs, interests, el) {
+  // ── 以下是原本 renderDashboard 的內容，只是資料來源換成 Sheets ──
+  var dlCount   = logs.filter(function(l){return l.action==='download';}).length;
+  var caseCount = logs.filter(function(l){return l.action==='case_interest';}).length;
   var users={};
-  logs.forEach(function(l){ if(l.name) users[l.name+'@'+(l.company||'')]=true; });
-  interests.forEach(function(r){ if(r.name) users[r.name+'@'+(r.company||'')]=true; });
+  logs.forEach(function(l){ if(l.name) users[l.name+'@'+l.company]=true; });
   var userCount = Object.keys(users).length;
-
-  // 地區統計
-  var regionCnt={};
-  interests.forEach(function(r){
-    var reg=r.region||'未填寫';
-    regionCnt[reg]=(regionCnt[reg]||0)+1;
-  });
-  var regionKeys=Object.keys(regionCnt).sort(function(a,b){ return regionCnt[b]-regionCnt[a]; });
-  var regionColors=['#003087','#0047BB','#0095D9','#E8530A','#FF6B2B','#10B981','#F59E0B','#7C3AED','#EC4899','#6B7280'];
-
-  // 熱門下載
-  var resCnt={};
-  logs.filter(function(l){ return l.action&&l.action.indexOf('下載')>-1; }).forEach(function(l){
-    if(l.target) resCnt[l.target]=(resCnt[l.target]||0)+1;
-  });
-  var topRes=Object.keys(resCnt).sort(function(a,b){ return resCnt[b]-resCnt[a]; }).slice(0,5);
-
-  el.innerHTML=[
-    // KPI
-    '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">',
-      kpiCard('⬇','總下載次數',dlCount,'#003087'),
-      kpiCard('💡','案例詢問次數',caseCount,'#E8530A'),
-      kpiCard('👤','不重複訪客',userCount,'#0095D9'),
-    '</div>',
-
-    // 地區分佈
-    '<div style="background:#fff;border:1.5px solid #DDE3EE;border-radius:12px;overflow:hidden;margin-bottom:16px">',
-      '<div style="background:linear-gradient(135deg,#003087,#0047BB);padding:10px 16px;font-size:13px;font-weight:700;color:#fff;display:flex;justify-content:space-between;align-items:center">',
-        '<span>📍 客戶地區分佈</span>',
-        '<span style="font-size:11px;font-weight:400;opacity:.75">共 '+interests.length+' 筆詢問</span>',
-      '</div>',
-      '<div style="padding:16px">',
-        regionKeys.length ? '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">'+
-          regionKeys.map(function(reg,i){
-            var cnt=regionCnt[reg];
-            var pct=Math.round(cnt/Math.max(interests.length,1)*100);
-            var barW=Math.round(cnt/Math.max(regionCnt[regionKeys[0]],1)*100);
-            var col=regionColors[i%regionColors.length];
-            return '<div style="background:#F4F6FA;border-radius:10px;padding:12px 14px">'+
-              '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'+
-                '<div style="display:flex;align-items:center;gap:6px">'+
-                  '<div style="width:10px;height:10px;border-radius:50%;background:'+col+'"></div>'+
-                  '<span style="font-size:13px;font-weight:700;color:#0D1B3E">'+reg+'</span>'+
-                '</div>'+
-                '<div style="display:flex;align-items:center;gap:4px">'+
-                  '<span style="font-size:18px;font-weight:900;color:'+col+'">'+cnt+'</span>'+
-                  '<span style="font-size:10px;color:#8B96B0">('+pct+'%)</span>'+
-                '</div>'+
-              '</div>'+
-              '<div style="height:6px;background:#DDE3EE;border-radius:3px">'+
-                '<div style="height:6px;width:'+barW+'%;background:'+col+';border-radius:3px"></div>'+
-              '</div>'+
-            '</div>';
-          }).join('')+'</div>'
-        : '<div style="color:#8B96B0;font-size:13px">尚無地區資料</div>',
-      '</div>',
-    '</div>',
-
-    // 案例詢問紀錄
-    '<div style="background:#fff;border:1.5px solid #DDE3EE;border-radius:12px;overflow:hidden;margin-bottom:16px">',
-      '<div style="background:#E8530A;padding:10px 16px;font-size:13px;font-weight:700;color:#fff;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">',
-        '<span>💡 案例詢問紀錄（含客戶聯絡資訊）</span>',
-        '<button onclick="exportExcel(\'interests\')" style="display:flex;align-items:center;gap:5px;padding:5px 12px;background:#fff;color:#E8530A;border:none;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">📊 匯出 Excel</button>',
-      '</div>',
-      '<div style="overflow-x:auto">',
-        '<table style="width:100%;border-collapse:collapse;font-size:12px">',
-          '<thead><tr style="background:#FFF5EE">',
-            '<th style="padding:8px 12px;text-align:left;color:#8B96B0;font-weight:700;white-space:nowrap">時間</th>',
-            '<th style="padding:8px 12px;text-align:left;color:#8B96B0;font-weight:700">姓名</th>',
-            '<th style="padding:8px 12px;text-align:left;color:#8B96B0;font-weight:700">公司</th>',
-            '<th style="padding:8px 12px;text-align:left;color:#8B96B0;font-weight:700">地區</th>',
-            '<th style="padding:8px 12px;text-align:left;color:#8B96B0;font-weight:700">手機</th>',
-            '<th style="padding:8px 12px;text-align:left;color:#8B96B0;font-weight:700">Email</th>',
-            '<th style="padding:8px 12px;text-align:left;color:#8B96B0;font-weight:700">感興趣案例</th>',
-          '</tr></thead>',
-          '<tbody>',
-            (interests.length ? interests.slice(0,50).map(function(r,i){
-              var bg=i%2===0?'#fff':'#FFF9F7';
-              return '<tr style="background:'+bg+';border-bottom:1px solid #EAEef5">'+
-                '<td style="padding:8px 12px;white-space:nowrap;color:#8B96B0">'+r.time+'</td>'+
-                '<td style="padding:8px 12px;font-weight:700;color:#003087">'+r.name+'</td>'+
-                '<td style="padding:8px 12px;color:#4A5578">'+r.company+'</td>'+
-                '<td style="padding:8px 12px"><span style="background:#EEF4FF;color:#003087;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600">'+(r.region||'—')+'</span></td>'+
-                '<td style="padding:8px 12px">'+(r.phone&&r.phone!=='—'?'<a href="tel:'+r.phone+'" style="color:#003087;font-weight:600;text-decoration:none">'+r.phone+'</a>':'<span style="color:#ccc">—</span>')+'</td>'+
-                '<td style="padding:8px 12px">'+(r.email&&r.email!=='—'?'<a href="mailto:'+r.email+'" style="color:#E8530A;font-weight:600;text-decoration:none">'+r.email+'</a>':'<span style="color:#ccc">—</span>')+'</td>'+
-                '<td style="padding:8px 12px;font-weight:600;color:#0D1B3E">'+(r['case']||r.case||'')+'</td>'+
-              '</tr>';
-            }).join('') : '<tr><td colspan="7" style="padding:24px;text-align:center;color:#8B96B0">尚無案例詢問紀錄</td></tr>'),
-          '</tbody>',
-        '</table>',
-      '</div>',
-    '</div>',
-
-    // 熱門下載
-    '<div style="background:#fff;border:1.5px solid #DDE3EE;border-radius:12px;overflow:hidden;margin-bottom:16px">',
-      '<div style="background:#003087;padding:10px 16px;font-size:13px;font-weight:700;color:#fff">🔥 熱門下載資源 Top 5</div>',
-      '<div style="padding:12px 16px">',
-        topRes.length ? topRes.map(function(r,i){
-          var pct=Math.round(resCnt[r]/Math.max(dlCount,1)*100);
-          return '<div style="margin-bottom:10px">'+
-            '<div style="display:flex;justify-content:space-between;font-size:12px;font-weight:600;margin-bottom:4px">'+
-              '<span>'+(i+1)+'. '+r+'</span>'+
-              '<span style="color:#003087">'+resCnt[r]+' 次</span>'+
-            '</div>'+
-            '<div style="height:6px;background:#EAEef5;border-radius:3px">'+
-              '<div style="height:6px;width:'+pct+'%;background:linear-gradient(90deg,#003087,#0095D9);border-radius:3px"></div>'+
-            '</div></div>';
-        }).join('') : '<div style="color:#8B96B0;font-size:13px">尚無下載記錄</div>',
-      '</div>',
-    '</div>',
-
-    // 完整行為紀錄
-    '<div style="background:#fff;border:1.5px solid #DDE3EE;border-radius:12px;overflow:hidden">',
-      '<div style="background:#4A5578;padding:10px 16px;font-size:13px;font-weight:700;color:#fff;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">',
-        '<span>📋 完整行為紀錄（最新 100 筆）</span>',
-        '<div style="display:flex;gap:8px">',
-          '<button onclick="exportExcel(\'logs\')" style="display:flex;align-items:center;gap:5px;padding:5px 12px;background:#fff;color:#4A5578;border:none;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">📊 匯出 Excel</button>',
-          '<button onclick="clearLogs()" style="background:rgba(255,255,255,0.2);border:none;border-radius:6px;padding:5px 10px;font-size:11px;color:#fff;cursor:pointer;font-family:inherit">清除本機</button>',
-        '</div>',
-      '</div>',
-      '<div style="overflow-x:auto">',
-        '<table style="width:100%;border-collapse:collapse;font-size:12px">',
-          '<thead><tr style="background:#F4F6FA">',
-            '<th style="padding:8px 12px;text-align:left;color:#8B96B0;font-weight:700;white-space:nowrap">時間</th>',
-            '<th style="padding:8px 12px;text-align:left;color:#8B96B0;font-weight:700">姓名</th>',
-            '<th style="padding:8px 12px;text-align:left;color:#8B96B0;font-weight:700">公司</th>',
-            '<th style="padding:8px 12px;text-align:left;color:#8B96B0;font-weight:700">地區</th>',
-            '<th style="padding:8px 12px;text-align:left;color:#8B96B0;font-weight:700">動作</th>',
-            '<th style="padding:8px 12px;text-align:left;color:#8B96B0;font-weight:700">資源 / 頁面</th>',
-          '</tr></thead>',
-          '<tbody>',
-            (logs.length ? logs.slice(0,100).map(function(l,i){
-              var bg=i%2===0?'#fff':'#F9FAFB';
-              var act=l.action||'';
-              var badge=act.indexOf('下載')>-1
-                ?'<span style="background:#EEF4FF;color:#003087;padding:2px 7px;border-radius:4px;font-weight:700;font-size:10px">⬇ 下載</span>'
-                :act.indexOf('案例')>-1
-                ?'<span style="background:#FFF5EE;color:#E8530A;padding:2px 7px;border-radius:4px;font-weight:700;font-size:10px">💡 案例</span>'
-                :'<span style="background:#F4F6FA;color:#8B96B0;padding:2px 7px;border-radius:4px;font-weight:700;font-size:10px">📄 其他</span>';
-              return '<tr style="background:'+bg+';border-bottom:1px solid #EAEef5">'+
-                '<td style="padding:8px 12px;white-space:nowrap;color:#8B96B0">'+l.time+'</td>'+
-                '<td style="padding:8px 12px;font-weight:600">'+l.name+'</td>'+
-                '<td style="padding:8px 12px;color:#4A5578">'+l.company+'</td>'+
-                '<td style="padding:8px 12px"><span style="background:#EEF4FF;color:#003087;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600">'+(l.region||'—')+'</span></td>'+
-                '<td style="padding:8px 12px">'+badge+'</td>'+
-                '<td style="padding:8px 12px;color:#0D1B3E">'+l.target+'</td>'+
-              '</tr>';
-            }).join('') : '<tr><td colspan="6" style="padding:24px;text-align:center;color:#8B96B0">尚無行為紀錄</td></tr>'),
-          '</tbody>',
-        '</table>',
-      '</div>',
-    '</div>'
-  ].join('');
-}
-  var el        = document.getElementById('dashBoard');
-  if(!el) return;
 
   var dlCount   = logs.filter(function(l){return l.action==='download';}).length;
   var caseCount = logs.filter(function(l){return l.action==='case_interest';}).length;
@@ -1858,7 +1729,7 @@ function renderDashboardData(logs, interests){
       '</div>',
     '</div>'
   ].join('');
-}
+} // end renderDashboardContent
 
 function exportExcel(type){
   var rows, headers, filename;
@@ -2096,29 +1967,10 @@ function renderCatalog(){
 }
 
 function logDL(title){
-  // 先開啟 PDF，不等登記
+  if(typeof logAction==='function' && typeof CUR_USER!=='undefined' && CUR_USER){
+    logAction('download', title, '');
+  }
   toast('✓ 開啟：'+title,'ok');
-  // 非同步記錄，不影響下載
-  setTimeout(function(){
-    if(typeof CUR_USER !== 'undefined' && CUR_USER){
-      writeToSheets('log', {
-        time:    new Date().toLocaleString('zh-TW'),
-        name:    CUR_USER.name,
-        company: CUR_USER.company,
-        region:  CUR_USER.region||'—',
-        phone:   CUR_USER.phone||'—',
-        email:   CUR_USER.email||'—',
-        action:  '⬇ 下載',
-        target:  title
-      });
-      // 本機備份
-      var entry = {id:Date.now(), time:new Date().toLocaleString('zh-TW'),
-        name:CUR_USER.name, company:CUR_USER.company,
-        phone:CUR_USER.phone||'—', region:CUR_USER.region||'—',
-        action:'download', target:title};
-      saveLog(entry);
-    }
-  }, 200);
 }
 
 var ADMIN_ACCOUNTS=[
@@ -2128,25 +1980,11 @@ var ADMIN_ACCOUNTS=[
 ];
 var adminAuthed=false;
 
-// ── 單一整合 go()，取代所有 override ──
-var _goOriginal = go;
-go = function(id){
-  // 後台驗證
-  if(id==='admin' && !adminAuthed){ showLogin(); return; }
-  // 正常切換
-  _goOriginal(id);
-  // 靜默記錄
-  if(id !== 'admin' && typeof CUR_USER !== 'undefined' && CUR_USER){
-    setTimeout(function(){
-      var PNAMES = {home:'首頁',catalog:'型錄・手冊',models:'3D 圖檔',
-        trouble:'故障排除',showcase:'精選應用案例',
-        ce:'CE 符合聲明',contact:'聯繫我們'};
-      saveLog({id:Date.now(), time:new Date().toLocaleString('zh-TW'),
-        name:CUR_USER.name, company:CUR_USER.company,
-        phone:CUR_USER.phone||'—', region:CUR_USER.region||'—',
-        action:'page', target:PNAMES[id]||id, extra:''});
-    }, 0);
-  }
+// 覆寫 go() — 進後台前先驗證
+var _go=go;
+go=function(id){
+  if(id==='admin'&&!adminAuthed){showLogin();return;}
+  _go(id);
 };
 
 function showLogin(){
@@ -2381,26 +2219,39 @@ function togglePw(){
 </div>
 
 <script>
-// 下載追蹤（靜默，不攔截）
+// ── 頁面切換時追蹤瀏覽（靜默，不強制身份）──
+var _origGoTrack = go;
+go = function(id){
+  var pageNames2 = {
+    home:'首頁',catalog:'型錄・手冊',models:'3D 圖檔',
+    trouble:'故障排除',showcase:'精選應用案例',
+    contact:'聯繫我們',admin:'後台管理'
+  };
+  if(id !== 'admin' && CUR_USER){
+    logAction('page', pageNames2[id]||id, '');
+  }
+  _origGoTrack(id);
+};
+
+// 下載需要身份
 var _baseDL = doDL;
 doDL = function(id){
-  var all=[];
-  Object.keys(D).forEach(function(k){ D[k].forEach(function(i){ all.push(i); }); });
-  var item = all.find(function(i){ return i.id===id; });
-  // 先執行下載
-  _baseDL(id);
-  // 有登記才靜默記錄，不攔截
-  if(item && typeof CUR_USER!=='undefined' && CUR_USER){
-    setTimeout(function(){
-      writeToSheets('log',{
-        time:new Date().toLocaleString('zh-TW'),
-        name:CUR_USER.name, company:CUR_USER.company,
-        region:CUR_USER.region||'—', phone:CUR_USER.phone||'—',
-        email:CUR_USER.email||'—', action:'⬇ 下載', target:item.title
-      });
-    },200);
-  }
+  checkUser(function(){
+    var all=[];Object.keys(D).forEach(function(k){D[k].forEach(function(i){all.push(i);});});
+    var item=all.find(function(i){return i.id===id;});
+    if(item) logAction('download', item.title, '');
+    _baseDL(id);
+  });
 };
+
+// 開啟 APP 時若無身份則跳出登記
+window.addEventListener('load', function(){
+  setTimeout(function(){
+    if(!getUser()){
+      openUserModal(null);
+    }
+  }, 800);
+});
 </script>
 <div class="mo" id="lgMo">
   <div class="mo-box" style="max-width:420px;background:#ffffff;border-radius:16px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,0.5);border:1.5px solid #DDE3EE;animation:mi .2s cubic-bezier(.4,0,.2,1)">

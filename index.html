@@ -1732,54 +1732,131 @@ function renderDashboardContent(logs, interests, el) {
 } // end renderDashboardContent
 
 function exportExcel(type){
-  var rows, headers, filename;
-  var now  = new Date().toLocaleDateString('zh-TW').replace(/\//g,'-');
-  var logs = getLogs();
+  // ── 修正：從 Google Sheets 讀取完整跨裝置資料再匯出 ──
+  var now      = new Date().toLocaleDateString('zh-TW').replace(/\/g,'-');
+  var SHEETS_ID = '1MK6zumlf6Gc6gFA5SPLxbaUWo_7U8yY4AusqqYZVEPA';
+  var sheet    = (type==='interests') ? 'interests' : 'logs';
+  var filename = (type==='interests') ? '案例詢問紀錄_'+now+'.csv' : '完整行為紀錄_'+now+'.csv';
 
+  toast('正在從 Google Sheets 取得最新資料…','in');
+
+  var url = 'https://docs.google.com/spreadsheets/d/'+SHEETS_ID+'/gviz/tq?tqx=out:csv&sheet='+sheet+'&t='+Date.now();
+  fetch(url)
+    .then(function(r){ return r.text(); })
+    .then(function(csvRaw){
+      // 解析 Sheets CSV → 加入 localStorage 離線備份合併
+      var sheetRows = parseSheetCSVRaw(csvRaw);
+
+      // 合併本機備份
+      var localData = (type==='interests') ? getInterests() : getLogs();
+      var keys = {};
+      sheetRows.forEach(function(r){ keys[(r[0]||'')+'|'+(r[1]||'')] = 1; });
+      localData.forEach(function(l){
+        var k = (l.time||'')+'|'+(l.name||'');
+        if(!keys[k]){
+          if(type==='interests'){
+            sheetRows.push([l.time,l.name,l.company,l.region||'—',l.phone||'—',l.email||'—',l.case||'']);
+          } else {
+            var act = l.action==='download'?'⬇ 下載'
+                    : l.action==='case_interest'?'💡 案例詢問'
+                    : l.action==='view'?'👁 瀏覽':'📄 頁面切換';
+            sheetRows.push([l.time,l.name||'—',l.company||'—',l.region||'—',l.phone||'—',act,l.action==='download'?(l.target||'—'):'—']);
+          }
+        }
+      });
+
+      if(!sheetRows.length){ toast('目前無資料可匯出','er'); return; }
+
+      // 重新格式化手機欄位（Excel 數字保護）
+      var headers = (type==='interests')
+        ? ['時間','姓名','公司','地區','手機','Email','感興趣案例']
+        : ['時間','姓名','公司','地區','手機','動作','下載資料'];
+
+      var rows = sheetRows.map(function(r){
+        // 手機欄（index 4）加 ="..." 防止 Excel 截斷
+        if(r[4] && r[4]!=='—' && r[4].indexOf('="')===-1){
+          r[4] = '="'+r[4]+'"';
+        }
+        return r;
+      });
+
+      var BOM = '\uFEFF';
+      var csv = BOM + [headers].concat(rows).map(function(row){
+        return row.map(function(cell){
+          var s = String(cell||'').replace(/"/g,'""');
+          return (s.indexOf(',')>-1||s.indexOf('"')>-1||s.indexOf('\n')>-1) ? '"'+s+'"' : s;
+        }).join(',');
+      }).join('\n');
+
+      var blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+      var dlUrl = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = dlUrl; a.download = filename;
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(dlUrl);
+      toast('✓ 已匯出：'+filename+'（共 '+rows.length+' 筆）','ok');
+    })
+    .catch(function(){
+      // Sheets 失敗 → fallback 本機
+      toast('無法連線 Sheets，改用本機資料匯出','er');
+      exportExcelLocal(type, now, filename);
+    });
+}
+
+// 解析 Sheets 回傳的 CSV（帶引號、逗號處理）
+function parseSheetCSVRaw(text){
+  var rows = [], lines = text.split('\n');
+  for(var i=1; i<lines.length; i++){  // i=1 跳過 header
+    var cols=[], cur='', inQ=false, line=lines[i];
+    for(var c=0; c<line.length; c++){
+      var ch=line[c];
+      if(ch==='"'){ inQ=!inQ; }
+      else if(ch===','&&!inQ){ cols.push(cur.trim()); cur=''; }
+      else { cur+=ch; }
+    }
+    cols.push(cur.trim());
+    if(cols.join('').trim()) rows.push(cols);
+  }
+  return rows;
+}
+
+// 本機 fallback 匯出
+function exportExcelLocal(type, now, filename){
+  var headers, rows;
   if(type==='interests'){
     headers = ['時間','姓名','公司','地區','手機','Email','感興趣案例'];
     rows = getInterests().map(function(r){
       var phone = (r.phone&&r.phone!=='—') ? '="'+r.phone+'"' : '—';
       return [r.time, r.name, r.company, r.region||'—', phone, r.email||'—', r.case];
     });
-    filename = '案例詢問紀錄_'+now+'.csv';
-
   } else {
     headers = ['時間','姓名','公司','地區','手機','動作','下載資料'];
-    rows = logs.map(function(l){
-      var act   = l.action==='download'?'⬇ 下載'
-                : l.action==='case_interest'?'💡 案例詢問'
-                : l.action==='view'?'👁 瀏覽'
-                : '📄 頁面切換';
+    rows = getLogs().map(function(l){
+      var act = l.action==='download'?'⬇ 下載'
+              : l.action==='case_interest'?'💡 案例詢問'
+              : l.action==='view'?'👁 瀏覽':'📄 頁面切換';
       var phone = (l.phone&&l.phone!=='—') ? '="'+l.phone+'"' : '—';
-      var dlTxt = l.action==='download' ? (l.target||'—') : '—';
-      return [
-        l.time, l.name||'—', l.company||'—', l.region||'—',
-        phone, act, dlTxt
-      ];
+      return [l.time, l.name||'—', l.company||'—', l.region||'—', phone, act,
+              l.action==='download'?(l.target||'—'):'—'];
     });
-    filename = '完整行為紀錄_'+now+'.csv';
   }
-
-  if(!rows.length){ toast('目前無資料可匯出','er'); return; }
-
-  // BOM 確保 Excel 正確顯示中文
+  if(!rows.length){ toast('本機也無資料可匯出','er'); return; }
   var BOM = '\uFEFF';
   var csv = BOM + [headers].concat(rows).map(function(row){
     return row.map(function(cell){
       var s = String(cell||'').replace(/"/g,'""');
-      return (s.indexOf(',')>-1||s.indexOf('"')>-1||s.indexOf('\n')>-1) ? '"'+s+'"' : s;
+      return (s.indexOf(',')>-1||s.indexOf('"')>-1||s.indexOf('\n')>-1)?'"'+s+'"':s;
     }).join(',');
   }).join('\n');
-
-  var blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
-  var url  = URL.createObjectURL(blob);
-  var a    = document.createElement('a');
-  a.href = url; a.download = filename;
+  var blob = new Blob([csv],{type:'text/csv;charset=utf-8;'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href=url; a.download=filename;
   document.body.appendChild(a); a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-  toast('✓ 已匯出：'+filename,'ok');
+  toast('✓ 已匯出（本機資料）：'+filename,'ok');
 }
 
 function kpiCard(icon, label, val, color){

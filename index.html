@@ -461,10 +461,9 @@ if('serviceWorker' in navigator){
           <span class="ct2">📢 最新公告</span>
         </div>
         <div class="cb" id="nlist">
-          <div style="display:flex;align-items:center;gap:8px;color:var(--td);font-size:13px;padding:8px 0">
-            <div style="width:14px;height:14px;border:2px solid var(--bd);border-top-color:var(--sky);border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0"></div>
-            載入公告中…
-          </div>
+          <div class="ni2">2026 年聚焦產業：AI 半導體 / 車用電子 / 伺服器組裝，歡迎洽詢 FAE 取得完整解決方案。<div class="ndate">2026-01-01</div></div>
+          <div class="ni2 warn">新版 RC+ 7.0 已上線，請至「型錄・手冊」頁面下載最新版本。<div class="ndate">2026-03-15</div></div>
+          <div class="ni2 info">如有客製化整合需求，可直接聯繫 FAE 同仁進行技術評估。<div class="ndate">2026-03-20</div></div>
         </div>
       </div>
     </div>
@@ -506,9 +505,7 @@ if('serviceWorker' in navigator){
       <div class="stitle">精選應用案例</div>
       <div class="ssub">EPSON Robot 實際導入各產業的成功應用，供規劃參考</div>
       <div class="fc-bar" id="showcase-filter-bar">
-        <button class="fc on" onclick="sfFilter(this,'all')">全部</button>
-        <button class="fc" onclick="sfFilter(this,'ENDUSER')">終端客戶</button>
-        <button class="fc" onclick="sfFilter(this,'SI')">SI</button>
+        <button class="fc on" id="fc-all" onclick="sfFilter(this,'all')">全部</button>
       </div>
       <!-- 載入狀態列 -->
       <div id="showcase-status" style="display:none;align-items:center;gap:8px;padding:8px 14px;background:var(--s2);border-radius:8px;margin-bottom:14px;font-size:12px;color:var(--tm)">
@@ -781,13 +778,18 @@ function loadShowcaseFromSheets(){
 function updateShowcaseFilter(cases){
   var bar = document.getElementById('showcase-filter-bar');
   if(!bar) return;
-  var types = {};
-  cases.forEach(function(c){ if(c.type) types[c.type]=true; });
-  var btns = '<button class="fc '+(CUR_CASE_FILTER==='all'?'on':'')+'" onclick="sfFilter(this,\'all\')">全部</button>';
-  Object.keys(types).forEach(function(t){
-    btns += '<button class="fc '+(CUR_CASE_FILTER===t?'on':'')+'" onclick="sfFilter(this,\''+t+'\')">'+t+'</button>';
+  // 用 industry 欄位產生按鈕（有 industry 優先，沒有才用 type）
+  var seen = {}, inds = [];
+  cases.forEach(function(s){
+    var v = (s.industry||s.type||'').trim();
+    if(v && !seen[v]){ seen[v]=true; inds.push(v); }
   });
-  bar.innerHTML = btns;
+  // 重建按鈕
+  bar.innerHTML = '<button class="fc '+(CUR_CASE_FILTER==='all'?'on':'')+'" id="fc-all" onclick="sfFilter(this,\'all\')">全部</button>';
+  inds.forEach(function(ind){
+    var active = CUR_CASE_FILTER===ind ? ' on' : '';
+    bar.innerHTML += '<button class="fc'+active+'" onclick="sfFilter(this,\''+ind+'\')">'+ ind +'</button>';
+  });
 }
 
 function sfFilter(btn, val){
@@ -920,7 +922,7 @@ function renderShowcase(f){
   var items = src;
   if(f && f!=='all'){
     items = src.filter(function(s){
-      return s.type===f || s.key===f;
+      return s.industry===f || s.type===f || s.key===f;
     });
   }
   if(items.length === 0){
@@ -1169,66 +1171,6 @@ function buildSI(){
   });
   return a;
 }
-// ── 最新公告：從 Google Sheets 讀取 ──
-function loadAnnouncements(){
-  var el = document.getElementById('nlist');
-  if(!el) return;
-  var SID = '1MK6zumlf6Gc6gFA5SPLxbaUWo_7U8yY4AusqqYZVEPA';
-  var url = 'https://docs.google.com/spreadsheets/d/'+SID+
-            '/gviz/tq?tqx=out:csv&sheet=announcements&t='+Date.now();
-  fetch(url)
-    .then(function(r){ return r.text(); })
-    .then(function(csv){
-      var rows = [], lines = csv.split('\n');
-      // 跳過 header（第0行）
-      for(var i=1; i<lines.length; i++){
-        var cols=[], cur='', inQ=false, line=lines[i];
-        for(var ci=0; ci<line.length; ci++){
-          var ch=line[ci];
-          if(ch==='"'){inQ=!inQ;}
-          else if(ch===','&&!inQ){cols.push(cur.trim());cur='';}
-          else{cur+=ch;}
-        }
-        cols.push(cur.trim());
-        // col[0]=主旨, col[1]=發布日期, col[2]=類型(可選: warn/info/空)
-        if(cols[0] && cols[0].replace(/"/g,'').trim()){
-          rows.push({
-            title: cols[0].replace(/^"|"$/g,'').trim(),
-            date:  (cols[1]||'').replace(/^"|"$/g,'').trim(),
-            type:  (cols[2]||'').replace(/^"|"$/g,'').trim()
-          });
-        }
-      }
-      if(!rows.length){
-        el.innerHTML='<div style="color:var(--td);font-size:13px;padding:8px 0">目前暫無公告</div>';
-        return;
-      }
-      var html='';
-      rows.forEach(function(r){
-        var cls = 'ni2' + (r.type==='warn'?' warn':r.type==='info'?' info':'');
-        html += '<div class="'+cls+'">'+
-          r.title+
-          (r.date?'<div class="ndate">'+r.date+'</div>':'')+
-          '</div>';
-      });
-      el.innerHTML = html;
-    })
-    .catch(function(){
-      // Sheets 失敗→顯示預設公告
-      el.innerHTML=
-        '<div class="ni2">2026 年聚焦產業：AI 半導體 / 車用電子 / 伺服器組裝，歡迎洽詢 FAE 取得完整解決方案。<div class="ndate">2026-01-01</div></div>'+
-        '<div class="ni2 warn">新版 RC+ 7.0 已上線，請至「型錄・手冊」頁面下載最新版本。<div class="ndate">2026-03-15</div></div>'+
-        '<div class="ni2 info">如有客製化整合需求，可直接聯繫 FAE 同仁進行技術評估。<div class="ndate">2026-03-20</div></div>';
-    });
-}
-
-// 頁面載入後自動執行
-if(document.readyState==='loading'){
-  document.addEventListener('DOMContentLoaded', loadAnnouncements);
-} else {
-  loadAnnouncements();
-}
-
 var _st=null,_si=null,_sd=[];
 function doSearch(q){
   clearTimeout(_st);

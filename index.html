@@ -28,6 +28,22 @@ body{font-family:'Noto Sans TC',sans-serif;background:var(--bg);color:var(--tx);
 .sb:hover .nl,.sb:hover .ln{opacity:1;transform:translateX(0);}
 .sb:hover .nbadge{opacity:1;}
 .sb:hover .ndiv{width:calc(100% - 28px);}
+.sb.pinned{width:220px !important;}
+.sb.pinned .nl,.sb.pinned .ln{opacity:1 !important;transform:translateX(0) !important;}
+.sb.pinned .nbadge{opacity:1 !important;}
+.sb.pinned .ndiv{width:calc(100% - 28px) !important;}
+.main.sb-pinned{margin-left:220px;}
+.pin-row{display:flex;align-items:center;height:38px;padding:0 10px;
+  border-bottom:1px solid rgba(255,255,255,.1);cursor:pointer;
+  gap:10px;transition:background .15s;flex-shrink:0;}
+.pin-row:hover{background:rgba(255,255,255,.1);}
+.pin-ic{font-size:17px;width:26px;text-align:center;flex-shrink:0;line-height:1;}
+.pin-tx{font-size:11px;font-weight:600;color:rgba(255,255,255,.55);
+  white-space:nowrap;opacity:0;transform:translateX(-6px);
+  transition:opacity .2s,transform .2s;}
+.sb:hover .pin-tx,.sb.pinned .pin-tx{opacity:1;transform:translateX(0);}
+.sb.pinned .pin-row{background:rgba(255,255,255,.12);}
+.sb.pinned .pin-tx{color:rgba(255,255,255,.95);}
 
 .slogo{height:66px;display:flex;align-items:center;gap:10px;padding:0 13px;
   background:rgba(0,0,0,.2);border-bottom:1px solid rgba(255,255,255,.1);
@@ -403,6 +419,10 @@ if('serviceWorker' in navigator){
       <div class="ln-a">飛速 × EPSON</div>
       <div class="ln-b">ROBOT 資源平台</div>
     </div>
+  </div>
+  <div class="pin-row" id="pinRow" onclick="togglePin()">
+    <span class="pin-ic" id="pinIc">📌</span>
+    <span class="pin-tx" id="pinTx">凍結側邊選單</span>
   </div>
   <div class="ns">
     <button class="ni act" onclick="go('home')"><div class="nico">🏠</div><span class="nl">首頁</span></button>
@@ -1168,6 +1188,37 @@ function buildSI(){
   });
   return a;
 }
+// ── 側邊欄凍結功能 ──
+var _sbPinned = false;
+function togglePin(){
+  _sbPinned = !_sbPinned;
+  var sb   = document.getElementById('sb');
+  var main = document.querySelector('.main');
+  var ic   = document.getElementById('pinIc');
+  var tx   = document.getElementById('pinTx');
+  if(_sbPinned){
+    if(sb)   sb.classList.add('pinned');
+    if(main) main.classList.add('sb-pinned');
+    if(ic)   ic.textContent = '📍';
+    if(tx)   tx.textContent = '解凍側邊選單';
+  } else {
+    if(sb)   sb.classList.remove('pinned');
+    if(main) main.classList.remove('sb-pinned');
+    if(ic)   ic.textContent = '📌';
+    if(tx)   tx.textContent = '凍結側邊選單';
+  }
+  try{ localStorage.setItem('sb_pin', _sbPinned ? '1' : '0'); }catch(e){}
+}
+// 讀取上次設定
+(function(){
+  var saved;
+  try{ saved = localStorage.getItem('sb_pin'); }catch(e){}
+  if(saved === '1'){
+    _sbPinned = false;
+    togglePin();
+  }
+})();
+
 var _st=null,_si=null,_sd=[];
 function doSearch(q){
   clearTimeout(_st);

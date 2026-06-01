@@ -73,7 +73,10 @@ body{font-family:'Noto Sans TC',sans-serif;background:var(--bg);color:var(--tx);
 .tb-m{flex:1;max-width:300px;}
 .sw{display:flex;align-items:center;gap:7px;background:var(--s2);
   border:1.5px solid var(--bd);border-radius:999px;padding:7px 14px;
-  transition:all .2s;}
+  transition:all .2s;position:relative;}
+.sr-item{padding:10px 16px;cursor:pointer;border-bottom:1px solid #EEF1F7;transition:background .12s;}
+.sr-item:last-child{border-bottom:none;}
+.sr-item:hover{background:#F4F7FF;}
 .sw:focus-within{border-color:var(--sky);background:#fff;
   box-shadow:0 0 0 3px rgba(0,160,233,.12);}
 .si{background:none;border:none;outline:none;font-family:inherit;
@@ -422,7 +425,8 @@ if('serviceWorker' in navigator){
     <div class="tb-m">
       <div class="sw">
         <span style="color:#7A92A8;font-size:14px">🔍</span>
-        <input class="si" placeholder="搜尋型錄、圖檔、故障碼…" oninput="doSearch(this.value)">
+        <input class="si" id="srInput" placeholder="搜尋型錄、圖檔、故障碼…" oninput="doSearch(this.value)" autocomplete="off">
+        <div id="srBox" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1.5px solid #DDE3EE;border-radius:10px;box-shadow:0 8px 32px rgba(0,48,135,.12);z-index:999;max-height:380px;overflow-y:auto;margin-top:4px;min-width:320px"></div>
       </div>
     </div>
     <div class="tb-r">
@@ -455,7 +459,6 @@ if('serviceWorker' in navigator){
       <div class="card">
         <div class="ch">
           <span class="ct2">📢 最新公告</span>
-          <button class="btn btn-ol btn-sm" onclick="openM('nm')">＋ 新增公告</button>
         </div>
         <div class="cb" id="nlist">
           <div class="ni2">2026 年聚焦產業：AI 半導體 / 車用電子 / 伺服器組裝，歡迎洽詢 FAE 取得完整解決方案。<div class="ndate">2026-01-01</div></div>
@@ -488,13 +491,11 @@ if('serviceWorker' in navigator){
     <!-- TROUBLE -->
     <div class="pg" id="pg-trouble">
       <div class="stitle">故障排除</div>
-      <div class="ssub">依錯誤碼或症狀快速查詢排除 SOP，可下載完整手冊</div>
+      <div class="ssub">EPSON 官方狀態碼與錯誤碼手冊，點擊直接下載 PDF</div>
       <div class="fc-bar">
         <button class="fc on" onclick="cf(this,'trouble','all')">全部</button>
-        <button class="fc" onclick="cf(this,'trouble','error')">錯誤碼查詢</button>
-        <button class="fc" onclick="cf(this,'trouble','mech')">機械異常</button>
-        <button class="fc" onclick="cf(this,'trouble','comm')">通訊異常</button>
-        <button class="fc" onclick="cf(this,'trouble','sw')">軟體問題</button>
+        <button class="fc" onclick="cf(this,'trouble','rc8')">Epson RC+ 8.0</button>
+        <button class="fc" onclick="cf(this,'trouble','rc7')">Epson RC+ 7.0</button>
       </div>
       <div class="rg" id="g-trouble"></div>
     </div>
@@ -667,13 +668,15 @@ var D={
     {id:13,title:'EZ-A STEP 檔',tag:'linear',type:'STEP',size:'28 MB',date:'2026-03-05',desc:''}
   ],
   trouble:[
-    {id:20,title:'錯誤碼 E001~E099 完整排除手冊',tag:'error',type:'PDF',size:'4.5 MB',date:'2026-01-05',desc:'控制器常見錯誤與對應處理步驟'},
-    {id:21,title:'E200 系列通訊錯誤快速查詢表',tag:'error',type:'PDF',size:'1.2 MB',date:'2026-02-01',desc:''},
-    {id:22,title:'機械異音排除 SOP',tag:'mech',type:'PDF',size:'2.1 MB',date:'2026-02-10',desc:'各軸異音判斷與處置流程'},
-    {id:23,title:'末端效應器振動排除手法',tag:'mech',type:'PDF',size:'1.8 MB',date:'2026-03-01',desc:''},
-    {id:24,title:'EtherNet/IP 通訊故障排除指南',tag:'comm',type:'PDF',size:'3.8 MB',date:'2026-03-12',desc:'含封包分析步驟'},
-    {id:25,title:'PROFINET 連線問題排除',tag:'comm',type:'PDF',size:'2.6 MB',date:'2026-03-18',desc:''},
-    {id:26,title:'RC+ 7.0 常見問題 Q&A',tag:'sw',type:'PDF',size:'1.9 MB',date:'2026-03-20',desc:'安裝、授權、模擬常見疑問'}
+    {id:20,title:'狀態碼與錯誤碼（RC800系列）',tag:'rc8',type:'PDF',size:'—',date:'—',
+     desc:'Epson RC+ 8.0 RC800 系列控制器狀態碼與錯誤碼完整查詢手冊',
+     url:'https://download.epson.biz/robots/ww/data/pdf/tc/Status_ErrorCode80_RC800.pdf'},
+    {id:21,title:'狀態碼與錯誤碼（RC700/RC90/T/VT系列）',tag:'rc8',type:'PDF',size:'—',date:'—',
+     desc:'Epson RC+ 8.0 RC700/RC90/T/VT 系列控制器狀態碼與錯誤碼完整查詢手冊',
+     url:'https://download.epson.biz/robots/ww/data/pdf/tc/Status_ErrorCode80.pdf'},
+    {id:22,title:'狀態碼與錯誤碼',tag:'rc7',type:'PDF',size:'—',date:'—',
+     desc:'Epson RC+ 7.0 控制器狀態碼與錯誤碼完整查詢手冊',
+     url:'https://download.epson.biz/robots/ww/data/pdf/tc/Status_ErrorCode.pdf'}
   ],
   showcase:[
     {id:1,title:'AI 半導體後段測試設備自動化',industry:'AI半導體',key:'AI半導體',icon:'🔬',type:'SI',model:'LS3-B401C',qty:50,
@@ -838,7 +841,7 @@ function splitCaseCSVRows(csv){
 var TICON={PDF:'📄',STEP:'🧊',ZIP:'💾',MP4:'▶️'};
 var TCLS={PDF:'iti-pdf',STEP:'iti-step',ZIP:'iti-zip',MP4:'iti-mp4'};
 var TTAG={PDF:'rtag-pdf',STEP:'rtag-step',ZIP:'rtag-zip',MP4:'rtag-mp4'};
-var TLBL={scara:'SCARA','6axis':'6 軸',linear:'直線型',controller:'控制器',manual:'手冊',error:'錯誤碼',mech:'機械',comm:'通訊',sw:'軟體'};
+var TLBL={scara:'SCARA','6axis':'6 軸',linear:'直線型',controller:'控制器',manual:'手冊',error:'錯誤碼',mech:'機械',comm:'通訊',sw:'軟體',rc8:'RC+ 8.0',rc7:'RC+ 7.0'};
 
 function renderRes(key,gid,filter){
   var el=document.getElementById(gid);
@@ -864,11 +867,11 @@ function renderRes(key,gid,filter){
         '</div>'+
       '</div>'+
       '<div class="rcb">'+
-        '<div class="rmeta"><span>📦 '+item.size+'</span><span>📅 '+item.date+'</span></div>'+
+        (item.size!=='—'?'<div class="rmeta"><span>📦 '+item.size+'</span><span>📅 '+item.date+'</span></div>':'')+
         (item.desc?'<div class="rdesc">'+item.desc+'</div>':'')+
         '<div class="ract">'+
-          '<button class="btn btn-sky btn-md" style="flex:1" onclick="doDL('+item.id+')">&#x2193;&nbsp;&nbsp;立即下載</button>'+
-          '<button class="btn btn-ol btn-ico" title="預覽" onclick="doPV('+item.id+')">👁</button>'+
+          '<button class="btn btn-sky btn-md" style="flex:1" onclick="doDL('+item.id+')">⬇&nbsp;&nbsp;下載 PDF</button>'+
+          (item.size!=='—'?'<button class="btn btn-ol btn-ico" title="預覽" onclick="doPV('+item.id+')">👁</button>':'')+
         '</div>'+
       '</div>'+
     '</div>';
@@ -1148,12 +1151,72 @@ function addNotice(){
   document.getElementById('ntxt').value='';
 }
 
-function doSearch(q){
-  if(!q.trim())return;
-  var all=[];Object.keys(D).forEach(function(k){D[k].forEach(function(i){all.push(i);});});
-  var h=all.filter(function(i){return i.title.indexOf(q)>=0||(i.desc||'').indexOf(q)>=0;});
-  if(h.length) toast('搜尋到 '+h.length+' 筆，請至對應頁面查看','in');
+function buildSI(){
+  var a=[];
+  if(typeof CATALOG_GROUPS!=='undefined'){
+    CATALOG_GROUPS.forEach(function(g){
+      (g.items||[]).forEach(function(it){
+        a.push({t:it.title,p:'catalog',l:g.label||'型錄・手冊',u:it.url||''});
+      });
+    });
+  }
+  [{k:'models',l:'3D 圖檔'},{k:'trouble',l:'故障排除'},{k:'showcase',l:'精選應用案例'}]
+  .forEach(function(m){
+    (D[m.k]||[]).forEach(function(it){
+      a.push({t:it.title,p:m.k,l:m.l,u:it.url||''});
+    });
+  });
+  return a;
 }
+var _st=null,_si=null,_sd=[];
+function doSearch(q){
+  clearTimeout(_st);
+  var box=document.getElementById('srBox');
+  if(!box) return;
+  if(!q||!q.trim()){box.style.display='none';return;}
+  _st=setTimeout(function(){
+    if(!_si) _si=buildSI();
+    var ql=q.toLowerCase();
+    _sd=_si.filter(function(r){return r.t.toLowerCase().indexOf(ql)>=0;});
+    if(!_sd.length){
+      box.innerHTML='<div style="padding:14px 16px;color:#8B96B0;font-size:13px">找不到「'+q+'」相關資料</div>';
+      box.style.display='block';return;
+    }
+    var h='';
+    _sd.slice(0,8).forEach(function(r,i){
+      var t=r.t.replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      h+='<div class="sr-item" data-si="'+i+'">'
+        +'<div style="font-size:13px;font-weight:600;color:#1E3050">'+t+'</div>'
+        +'<div style="font-size:11px;color:#7A92A8;margin-top:2px">'+r.l+'</div>'
+        +'</div>';
+    });
+    if(_sd.length>8) h+='<div style="padding:8px 16px;font-size:11px;color:#7A92A8;border-top:1px solid #EEF1F7">共 '+_sd.length+' 筆</div>';
+    box.innerHTML=h;
+    box.style.display='block';
+  },200);
+}
+document.addEventListener('click',function(e){
+  var box=document.getElementById('srBox');
+  var inp=document.getElementById('srInput');
+  var it=e.target.closest&&e.target.closest('.sr-item');
+  if(it&&box&&box.contains(it)){
+    var r=_sd[parseInt(it.getAttribute('data-si'),10)];
+    if(!r) return;
+    box.style.display='none';
+    if(inp) inp.value='';
+    if(r.u){window.open(r.u,'_blank');toast('開啟：'+r.t,'ok');logAction('download',r.t,r.u);}
+    else{go(r.p);toast('已跳至「'+({catalog:'型錄・手冊',models:'3D 圖檔',trouble:'故障排除',showcase:'精選應用案例'}[r.p]||r.p)+'」','in');}
+    return;
+  }
+  if(box&&e.target!==inp&&!box.contains(e.target)) box.style.display='none';
+});
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape'){
+    var b=document.getElementById('srBox'),inp=document.getElementById('srInput');
+    if(b) b.style.display='none';
+    if(inp) inp.value='';
+  }
+});
 
 function openM(id){document.getElementById(id).classList.add('on');}
 function closeM(id){document.getElementById(id).classList.remove('on');}

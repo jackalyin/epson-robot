@@ -461,9 +461,10 @@ if('serviceWorker' in navigator){
           <span class="ct2">📢 最新公告</span>
         </div>
         <div class="cb" id="nlist">
-          <div class="ni2">2026 年聚焦產業：AI 半導體 / 車用電子 / 伺服器組裝，歡迎洽詢 FAE 取得完整解決方案。<div class="ndate">2026-01-01</div></div>
-          <div class="ni2 warn">新版 RC+ 7.0 已上線，請至「型錄・手冊」頁面下載最新版本。<div class="ndate">2026-03-15</div></div>
-          <div class="ni2 info">如有客製化整合需求，可直接聯繫 FAE 同仁進行技術評估。<div class="ndate">2026-03-20</div></div>
+          <div style="display:flex;align-items:center;gap:8px;color:var(--td);font-size:13px;padding:8px 0">
+            <div style="width:14px;height:14px;border:2px solid var(--bd);border-top-color:var(--sky);border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0"></div>
+            載入公告中…
+          </div>
         </div>
       </div>
     </div>
@@ -1168,6 +1169,66 @@ function buildSI(){
   });
   return a;
 }
+// ── 最新公告：從 Google Sheets 讀取 ──
+function loadAnnouncements(){
+  var el = document.getElementById('nlist');
+  if(!el) return;
+  var SID = '1MK6zumlf6Gc6gFA5SPLxbaUWo_7U8yY4AusqqYZVEPA';
+  var url = 'https://docs.google.com/spreadsheets/d/'+SID+
+            '/gviz/tq?tqx=out:csv&sheet=announcements&t='+Date.now();
+  fetch(url)
+    .then(function(r){ return r.text(); })
+    .then(function(csv){
+      var rows = [], lines = csv.split('\n');
+      // 跳過 header（第0行）
+      for(var i=1; i<lines.length; i++){
+        var cols=[], cur='', inQ=false, line=lines[i];
+        for(var ci=0; ci<line.length; ci++){
+          var ch=line[ci];
+          if(ch==='"'){inQ=!inQ;}
+          else if(ch===','&&!inQ){cols.push(cur.trim());cur='';}
+          else{cur+=ch;}
+        }
+        cols.push(cur.trim());
+        // col[0]=主旨, col[1]=發布日期, col[2]=類型(可選: warn/info/空)
+        if(cols[0] && cols[0].replace(/"/g,'').trim()){
+          rows.push({
+            title: cols[0].replace(/^"|"$/g,'').trim(),
+            date:  (cols[1]||'').replace(/^"|"$/g,'').trim(),
+            type:  (cols[2]||'').replace(/^"|"$/g,'').trim()
+          });
+        }
+      }
+      if(!rows.length){
+        el.innerHTML='<div style="color:var(--td);font-size:13px;padding:8px 0">目前暫無公告</div>';
+        return;
+      }
+      var html='';
+      rows.forEach(function(r){
+        var cls = 'ni2' + (r.type==='warn'?' warn':r.type==='info'?' info':'');
+        html += '<div class="'+cls+'">'+
+          r.title+
+          (r.date?'<div class="ndate">'+r.date+'</div>':'')+
+          '</div>';
+      });
+      el.innerHTML = html;
+    })
+    .catch(function(){
+      // Sheets 失敗→顯示預設公告
+      el.innerHTML=
+        '<div class="ni2">2026 年聚焦產業：AI 半導體 / 車用電子 / 伺服器組裝，歡迎洽詢 FAE 取得完整解決方案。<div class="ndate">2026-01-01</div></div>'+
+        '<div class="ni2 warn">新版 RC+ 7.0 已上線，請至「型錄・手冊」頁面下載最新版本。<div class="ndate">2026-03-15</div></div>'+
+        '<div class="ni2 info">如有客製化整合需求，可直接聯繫 FAE 同仁進行技術評估。<div class="ndate">2026-03-20</div></div>';
+    });
+}
+
+// 頁面載入後自動執行
+if(document.readyState==='loading'){
+  document.addEventListener('DOMContentLoaded', loadAnnouncements);
+} else {
+  loadAnnouncements();
+}
+
 var _st=null,_si=null,_sd=[];
 function doSearch(q){
   clearTimeout(_st);

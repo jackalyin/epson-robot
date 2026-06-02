@@ -461,9 +461,7 @@ if('serviceWorker' in navigator){
           <span class="ct2">📢 最新公告</span>
         </div>
         <div class="cb" id="nlist">
-          <div class="ni2">2026 年聚焦產業：AI 半導體 / 車用電子 / 伺服器組裝，歡迎洽詢 FAE 取得完整解決方案。<div class="ndate">2026-01-01</div></div>
-          <div class="ni2 warn">新版 RC+ 7.0 已上線，請至「型錄・手冊」頁面下載最新版本。<div class="ndate">2026-03-15</div></div>
-          <div class="ni2 info">如有客製化整合需求，可直接聯繫 FAE 同仁進行技術評估。<div class="ndate">2026-03-20</div></div>
+          <div style="display:flex;align-items:center;gap:8px;color:var(--td);font-size:13px;padding:4px 0"><div style="width:14px;height:14px;border:2px solid var(--bd);border-top-color:var(--sky);border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0"></div>載入公告中…</div>
         </div>
       </div>
     </div>
@@ -1171,6 +1169,74 @@ function buildSI(){
   });
   return a;
 }
+// ── 最新公告：從 Google Sheets 讀取 ──
+function loadAnnouncements(){
+  var el=document.getElementById('nlist');
+  if(!el) return;
+  // 同時嘗試兩種 URL 格式（sheet 名稱 / gid），提高成功率
+  var urls=[
+    'https://docs.google.com/spreadsheets/d/'+SHEETS_ID+'/gviz/tq?tqx=out:csv&sheet=announcements&t='+Date.now(),
+    'https://docs.google.com/spreadsheets/d/'+SHEETS_ID+'/gviz/tq?tqx=out:csv&gid=206604494&t='+Date.now()
+  ];
+  function tryFetch(idx){
+    if(idx>=urls.length){ showFallback(el); return; }
+    fetch(urls[idx])
+      .then(function(r){
+        if(!r.ok) throw new Error('HTTP '+r.status);
+        return r.text();
+      })
+      .then(function(csv){
+        var rows=parseAnnCSV(csv);
+        if(!rows.length) throw new Error('empty');
+        renderAnn(el, rows);
+      })
+      .catch(function(){ tryFetch(idx+1); });
+  }
+  tryFetch(0);
+}
+
+function parseAnnCSV(csv){
+  var rows=[], lines=csv.split('\n');
+  for(var i=1;i<lines.length;i++){
+    var cols=[],cur='',inQ=false,line=lines[i];
+    for(var ci=0;ci<line.length;ci++){
+      var ch=line[ci];
+      if(ch==='"'){inQ=!inQ;}
+      else if(ch===','&&!inQ){cols.push(cur.trim());cur='';}
+      else{cur+=ch;}
+    }
+    cols.push(cur.trim());
+    var title=(cols[0]||'').replace(/^"|"$/g,'').trim();
+    if(!title) continue;
+    rows.push({
+      title: title,
+      date:  (cols[1]||'').replace(/^"|"$/g,'').trim(),
+      type:  (cols[2]||'').replace(/^"|"$/g,'').trim().toLowerCase()
+    });
+  }
+  return rows;
+}
+
+function renderAnn(el, rows){
+  var html='';
+  rows.forEach(function(r){
+    var cls='ni2'+(r.type==='warn'?' warn':r.type==='info'?' info':'');
+    html+='<div class="'+cls+'">'+r.title+(r.date?'<div class="ndate">'+r.date+'</div>':'')+' </div>';
+  });
+  el.innerHTML=html;
+}
+
+function showFallback(el){
+  el.innerHTML=
+    '<div class="ni2">2026台北國際自動化工業大展：2026.08.19(三)~2026.08.22(六)，地點：台北南港展覽館一館4樓。<div class="ndate">2026-06-01</div></div>'+
+    '<div class="ni2 warn">對於新規格手臂與控制器，目前已更新符合 TÜV 認證資料，可至『CE 符合聲明』下載。<div class="ndate">2026-06-01</div></div>'+
+    '<div class="ni2 info">如有客製化整合需求，可直接聯繫『PM 陰建宏』進行技術評估，亦可至『聯繫我們』進行聯繫。<div class="ndate">2026-06-01</div></div>';
+}
+
+if(document.readyState==='loading'){
+  document.addEventListener('DOMContentLoaded',loadAnnouncements);
+}else{loadAnnouncements();}
+
 var _st=null,_si=null,_sd=[];
 function doSearch(q){
   clearTimeout(_st);

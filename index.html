@@ -477,11 +477,13 @@ if('serviceWorker' in navigator){
     <div class="pg" id="pg-models">
       <div class="stitle">3D 圖檔</div>
       <div class="ssub">STEP / CAD 格式，可匯入 SolidWorks、AutoCAD、CATIA 等軟體</div>
-      <div class="fc-bar">
-        <button class="fc on" onclick="cf(this,'models','all')">全部</button>
-        <button class="fc" onclick="cf(this,'models','scara')">SCARA</button>
-        <button class="fc" onclick="cf(this,'models','6axis')">6 軸</button>
-        <button class="fc" onclick="cf(this,'models','linear')">直線型</button>
+      <div class="fc-bar" id="models-filter-bar">
+        <button class="fc on" id="mfc-all" onclick="modelsFilter(this,'all')">全部</button>
+        <!-- 動態篩選按鈕由 loadModels() 產生 -->
+      </div>
+      <div id="models-status" style="display:none;align-items:center;gap:8px;padding:8px 0;font-size:12px;color:var(--td)">
+        <div style="width:14px;height:14px;border:2px solid var(--bd);border-top-color:var(--sky);border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0"></div>
+        <span id="models-status-txt">從 Google Sheets 載入 3D 圖檔資料中…</span>
       </div>
       <div class="rg" id="g-models"></div>
     </div>
@@ -657,12 +659,7 @@ if('serviceWorker' in navigator){
 <script>
 var D={
   catalog:[],
-  models:[
-    {id:10,title:'LS3-401S STEP 檔',tag:'scara',type:'STEP',size:'45 MB',date:'2026-01-10',desc:'含手臂及法蘭完整模型'},
-    {id:11,title:'LS6-602S STEP 檔',tag:'scara',type:'STEP',size:'52 MB',date:'2026-01-10',desc:''},
-    {id:12,title:'C8-A901S 3D 模型',tag:'6axis',type:'STEP',size:'62 MB',date:'2026-02-15',desc:''},
-    {id:13,title:'EZ-A STEP 檔',tag:'linear',type:'STEP',size:'28 MB',date:'2026-03-05',desc:''}
-  ],
+  models:[],
   trouble:[
     {id:20,title:'狀態碼與錯誤碼（RC800系列）',tag:'rc8',type:'PDF',size:'—',date:'—',
      desc:'Epson RC+ 8.0 RC800 系列控制器狀態碼與錯誤碼完整查詢手冊',
@@ -719,7 +716,7 @@ function go(id){
 function render(id){
   if(id==='catalog') renderCatalog();
   if(id==='ce')      renderCE();
-  else if(id==='models') renderRes('models','g-models','all');
+  else if(id==='models') loadModels();
   else if(id==='trouble') renderRes('trouble','g-trouble','all');
   else if(id==='showcase'){
     loadShowcaseFromSheets();
@@ -1236,6 +1233,116 @@ function showFallback(el){
 if(document.readyState==='loading'){
   document.addEventListener('DOMContentLoaded',loadAnnouncements);
 }else{loadAnnouncements();}
+
+// ── 3D 圖檔：從 Google Sheets 3D CAD 工作表讀取 ──
+// gid=1205866795，欄位：A=類別, B=型號, C=位址
+var ALL_MODELS = [];
+var CUR_MODELS_FILTER = 'all';
+
+function loadModels(){
+  var el     = document.getElementById('g-models');
+  var status = document.getElementById('models-status');
+  var stxt   = document.getElementById('models-status-txt');
+  if(status){ status.style.display='flex'; }
+
+  var url = 'https://docs.google.com/spreadsheets/d/' + SHEETS_ID +
+            '/gviz/tq?tqx=out:csv&gid=1205866795&t=' + Date.now();
+  fetch(url)
+    .then(function(r){ return r.text(); })
+    .then(function(csv){
+      var rows=[], lines=csv.split('\n');
+      for(var i=1; i<lines.length; i++){
+        var cols=[], cur='', inQ=false, line=lines[i];
+        for(var ci=0; ci<line.length; ci++){
+          var ch=line[ci];
+          if(ch==='"'){inQ=!inQ;}
+          else if(ch===','&&!inQ){cols.push(cur.trim());cur='';}
+          else{cur+=ch;}
+        }
+        cols.push(cur.trim());
+        var cat   = (cols[0]||'').replace(/^"|"$/g,'').trim();
+        var model = (cols[1]||'').replace(/^"|"$/g,'').trim();
+        var url2  = (cols[2]||'').replace(/^"|"$/g,'').trim();
+        if(!model || !url2) continue;
+        ALL_MODELS.push({ cat:cat, model:model, url:url2 });
+      }
+      if(status){ status.style.display='none'; }
+      if(!ALL_MODELS.length){
+        if(el) el.innerHTML='<div style="text-align:center;padding:48px;color:var(--td)"><div style="font-size:36px;margin-bottom:12px">📭</div><div>目前無 3D 圖檔資料</div></div>';
+        return;
+      }
+      buildModelsFilters();
+      renderModels('all');
+      toast('已載入 '+ALL_MODELS.length+' 筆 3D 圖檔','ok');
+    })
+    .catch(function(){
+      if(status){ status.style.display='none'; }
+      if(el) el.innerHTML='<div style="text-align:center;padding:48px;color:var(--td)"><div style="font-size:36px;margin-bottom:12px">⚠️</div><div style="font-size:14px">無法載入資料，請確認網路連線後重新整理</div></div>';
+    });
+}
+
+function buildModelsFilters(){
+  var bar = document.getElementById('models-filter-bar');
+  if(!bar) return;
+  // 收集所有類別（去重維持順序）
+  var seen={}, cats=[];
+  ALL_MODELS.forEach(function(m){
+    if(m.cat && !seen[m.cat]){ seen[m.cat]=true; cats.push(m.cat); }
+  });
+  // 清除舊動態按鈕（保留「全部」）
+  bar.querySelectorAll('.fc:not(#mfc-all)').forEach(function(b){ b.parentNode.removeChild(b); });
+  // 新增各類別按鈕
+  cats.forEach(function(cat){
+    var btn = document.createElement('button');
+    btn.className = 'fc';
+    btn.textContent = cat;
+    btn.onclick = function(){ modelsFilter(this, cat); };
+    bar.appendChild(btn);
+  });
+}
+
+function modelsFilter(btn, filter){
+  CUR_MODELS_FILTER = filter;
+  document.querySelectorAll('#models-filter-bar .fc').forEach(function(b){ b.classList.remove('on'); });
+  btn.classList.add('on');
+  renderModels(filter);
+}
+
+function renderModels(filter){
+  var el = document.getElementById('g-models');
+  if(!el) return;
+  var items = ALL_MODELS;
+  if(filter && filter !== 'all'){
+    items = ALL_MODELS.filter(function(m){ return m.cat === filter; });
+  }
+  if(!items.length){
+    el.innerHTML = '<div style="text-align:center;padding:48px;color:var(--td)"><div style="font-size:36px;margin-bottom:12px">📭</div><div>此類別目前無資料</div></div>';
+    return;
+  }
+  var groups = {}, order = [];
+  items.forEach(function(m){
+    if(!groups[m.cat]){ groups[m.cat]=[]; order.push(m.cat); }
+    groups[m.cat].push(m);
+  });
+  var html = '';
+  order.forEach(function(cat){
+    var ico = cat === 'SCARA' ? '🦾' : cat === '6 Axis' ? '🤖' : '📦';
+    html += '<div style="margin-bottom:20px">';
+    html += '<div style="font-size:13px;font-weight:700;color:var(--sky);padding:8px 0;border-bottom:1px solid var(--bd);margin-bottom:8px">' + ico + ' ' + cat + '</div>';
+    groups[cat].forEach(function(m){
+      html += '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--white);border:1.5px solid var(--bd);border-radius:8px;margin-bottom:6px;">';
+      html += '<div style="font-size:18px;flex-shrink:0">📦</div>';
+      html += '<div style="flex:1;min-width:0;">';
+      html += '<div style="font-size:13px;font-weight:600;color:var(--dark)">' + m.model + '</div>';
+      html += '<div style="font-size:11px;color:var(--td);margin-top:2px">STEP / CAD</div>';
+      html += '</div>';
+      html += '<a href="' + m.url + '" target="_blank" class="btn btn-sky btn-md" style="flex-shrink:0;text-decoration:none;white-space:nowrap">⬇&nbsp;下載</a>';
+      html += '</div>';
+    });
+    html += '</div>';
+  });
+  el.innerHTML = html;
+}
 
 var _st=null,_si=null,_sd=[];
 function doSearch(q){
@@ -1839,6 +1946,7 @@ function renderDashboardContent(logs, interests, el) {
         '<span>📋 完整行為紀錄（最新 100 筆）</span>',
         '<div style="display:flex;gap:8px">',
           '<button onclick="exportExcel(\'logs\')" style="display:flex;align-items:center;gap:5px;padding:5px 12px;background:#fff;color:#4A5578;border:none;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit" onmouseover="this.style.background=\'#F4F6FA\'" onmouseout="this.style.background=\'#fff\'">📊 匯出 Excel</button>',
+          '<button onclick="clearLogs()" style="background:rgba(255,255,255,0.2);border:none;border-radius:6px;padding:5px 10px;font-size:11px;color:#fff;cursor:pointer;font-family:inherit">清除紀錄</button>',
         '</div>',
       '</div>',
       '<div style="overflow-x:auto">',

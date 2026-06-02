@@ -1158,11 +1158,15 @@ function buildSI(){
       });
     });
   }
-  [{k:'models',l:'3D 圖檔'},{k:'trouble',l:'故障排除'},{k:'showcase',l:'精選應用案例'}]
+  [{k:'trouble',l:'故障排除'},{k:'showcase',l:'精選應用案例'}]
   .forEach(function(m){
     (D[m.k]||[]).forEach(function(it){
       a.push({t:it.title,p:m.k,l:m.l,u:it.url||''});
     });
+  });
+  // 3D 圖檔：每次建立索引時加入最新的 ALL_MODELS
+  (ALL_MODELS||[]).forEach(function(m){
+    a.push({t:m.model,p:'models',l:'3D 圖檔 — '+m.cat,u:m.url||''});
   });
   return a;
 }
@@ -1231,19 +1235,28 @@ function showFallback(el){
 }
 
 if(document.readyState==='loading'){
-  document.addEventListener('DOMContentLoaded',loadAnnouncements);
-}else{loadAnnouncements();}
+  document.addEventListener('DOMContentLoaded',function(){
+    loadAnnouncements();
+    loadModels(true); // 背景預載 3D 圖檔，讓搜尋立即可用
+  });
+}else{
+  loadAnnouncements();
+  loadModels(true); // 背景預載 3D 圖檔
+}
 
 // ── 3D 圖檔：從 Google Sheets 3D CAD 工作表讀取 ──
 // gid=1205866795，欄位：A=類別, B=型號, C=位址
 var ALL_MODELS = [];
 var CUR_MODELS_FILTER = 'all';
 
-function loadModels(){
+function loadModels(silent){
+  if(!silent && ALL_MODELS.length>0){
+    buildModelsFilters(); renderModels(CUR_MODELS_FILTER); return;
+  }
   var el     = document.getElementById('g-models');
   var status = document.getElementById('models-status');
   var stxt   = document.getElementById('models-status-txt');
-  if(status){ status.style.display='flex'; }
+  if(!silent && status){ status.style.display='flex'; }
 
   var url = 'https://docs.google.com/spreadsheets/d/' + SHEETS_ID +
             '/gviz/tq?tqx=out:csv&gid=1205866795&t=' + Date.now();
@@ -1271,13 +1284,17 @@ function loadModels(){
         if(el) el.innerHTML='<div style="text-align:center;padding:48px;color:var(--td)"><div style="font-size:36px;margin-bottom:12px">📭</div><div>目前無 3D 圖檔資料</div></div>';
         return;
       }
-      buildModelsFilters();
-      renderModels('all');
-      toast('已載入 '+ALL_MODELS.length+' 筆 3D 圖檔','ok');
+      if(!silent){
+        buildModelsFilters();
+        renderModels('all');
+        toast('已載入 '+ALL_MODELS.length+' 筆 3D 圖檔','ok');
+      }
     })
     .catch(function(){
-      if(status){ status.style.display='none'; }
-      if(el) el.innerHTML='<div style="text-align:center;padding:48px;color:var(--td)"><div style="font-size:36px;margin-bottom:12px">⚠️</div><div style="font-size:14px">無法載入資料，請確認網路連線後重新整理</div></div>';
+      if(!silent){
+        if(status){ status.style.display='none'; }
+        if(el) el.innerHTML='<div style="text-align:center;padding:48px;color:var(--td)"><div style="font-size:36px;margin-bottom:12px">⚠️</div><div style="font-size:14px">無法載入資料，請確認網路連線後重新整理</div></div>';
+      }
     });
 }
 
@@ -1344,14 +1361,14 @@ function renderModels(filter){
   el.innerHTML = html;
 }
 
-var _st=null,_si=null,_sd=[];
+var _st=null,_sd=[];
 function doSearch(q){
   clearTimeout(_st);
   var box=document.getElementById('srBox');
   if(!box) return;
   if(!q||!q.trim()){box.style.display='none';return;}
   _st=setTimeout(function(){
-    if(!_si) _si=buildSI();
+    var _si=buildSI(); // 每次重建確保包含最新 ALL_MODELS
     var ql=q.toLowerCase();
     _sd=_si.filter(function(r){return r.t.toLowerCase().indexOf(ql)>=0;});
     if(!_sd.length){
